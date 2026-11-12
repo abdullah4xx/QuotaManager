@@ -1,0 +1,98 @@
+# QuotaManager configuration for the OpenWrt router (D-Link DIR-853 A3)
+#
+# Topology:
+#   WE21A795 (192.168.1.1)  --WiFi-->  D-Link DIR-853 A3 (uplink 192.168.1.66)
+#                                           |
+#                                    br-lan 192.168.2.1  <-- gateway for clients
+#                                           |
+#                              wired clients + 2.4/5GHz AP "OpenWrt"
+#
+# Notes for this platform:
+#  * pydantic v1 + fastapi 0.99 (no pydantic-core / Rust wheel for mipsel)
+#  * ipv6 disabled: OpenWrt uses odhcpd for RA, the app's dnsmasq-based RA
+#    would fight it
+#  * dnsmasq runs from UCI (/etc/config/dhcp) with confdir=/etc/dnsmasq.d so
+#    the app's own fragments (quota-ignore.conf) are picked up
+
+bundle:
+  total_gb: 200.0
+  reset_day: 0
+  period_type: end_of_month
+
+db_path: /opt/quota-data/quota.db
+log_file: /var/log/quota-gateway/quota.log
+log_level: INFO
+timezone: Africa/Cairo
+
+dhcp:
+  enable: true
+  interface: "br-lan"
+  gateway_ip: 192.168.2.1
+  router_ip: 192.168.1.1
+  dns_servers: [8.8.8.8, 1.1.1.1]
+  dns_forward: true
+  subnet: 255.255.255.0
+  pool_start: 192.168.2.100
+  pool_end: 192.168.2.200
+  lease_hours: 24
+  ipv6_enable: false
+  ipv6_prefix: "fd00:da7a:2::/64"
+  ipv6_gateway: "fd00:da7a:2::1"
+  ipv6_probe_interval_s: 600
+  lease_file: /var/lib/misc/dnsmasq.leases
+  ignore_file: /etc/dnsmasq.d/quota-ignore.conf
+  reload_dnsmasq: true
+  lan_router_ip: 192.168.1.1
+  lan_dns_servers: [8.8.8.8, 1.1.1.1]
+  uplink_ip: 192.168.1.66
+  lan_cidr: 24
+
+web:
+  host: 0.0.0.0
+  port: 8080
+  secure_cookies: false
+  tls_certfile: ""
+  tls_keyfile: ""
+  docs_enabled: false
+
+firewall:
+  enabled: true
+  watchdog_seconds: 45
+  probe_ip: ""
+  services: []
+  port_forwards: []
+  dmz: ""
+  rules: []
+  allow_cidrs: []
+  deny_cidrs: []
+  syn_flood:
+    rate: 10
+    burst: 20
+  brute_force:
+    threshold: 10
+    ban_seconds: 1800
+  scan_detect:
+    enabled: true
+    syn_threshold: 200
+    ban_seconds: 3600
+  geo_block: false
+  wan_confirmed: false
+
+# tc shaper off: the router CPU is too weak for the per-tick qdisc
+# juggling (4 tc spawns per tick). Turn it on from the dashboard if you set
+# a line rate.
+shaping:
+  enabled: false
+
+# --- performance tuning for a weak CPU (MT7621) ---
+# The latency probe ARPs every client 6x per sweep to tell WiFi from wired;
+# on this CPU each sweep blocks the event loop for ~4s. It only labels
+# devices, nothing functional.
+network:
+  latency_probe:
+    enabled: false
+
+# The self-updater hits GitHub every 24h and stalls ~6s. It would also
+# overwrite the pydantic/uplink patches with upstream code.
+update:
+  enabled: false
