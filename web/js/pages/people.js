@@ -5,7 +5,7 @@ import { openUserDrawer, openDeviceDrawer } from "../components/userDrawer.js";
 import { ov, loadLive } from "../core/overviewData.js";
 import { actions } from "../core/actions.js";
 import { toast } from "../components/toast.js";
-import { openAddUser, openAddDevice } from "../components/peopleDialogs.js";
+import { openAddUser, openAddDevice, openAdoptDevice } from "../components/peopleDialogs.js";
 import { api } from "../core/api.js";
 
 let query = "", filter = "all", timer = null;
@@ -85,6 +85,6 @@ export default function people(ctx) {
         h("div", { class: "c-name" }, r.ip ? iso(r.ip) : "", h("span", { class: "mono" }, [iso(r.mac || ""), r.vendor && r.vendor !== "Unknown" ? r.vendor : ""].filter(Boolean).join(" · "))),
         chip(r.blocked ? "danger" : r.allowed ? "ok" : "warn", r.blocked ? t("pp.rogue.cut") : r.allowed ? t("pp.rogue.allowed") : t("pp.rogue.open")),
         h("div", { class: "row-acts", style: { "grid-column": "2 / -1" } },
-          h("button", { type: "button", class: "btn primary sm", onclick: act(async () => { await api.post("/api/rogue/adopt", { mac: r.mac, ip: r.ip }); toast(t("pp.rogue.adopted")); }) }, t("pp.rogue.manage")),
+          h("button", { type: "button", class: "btn primary sm", onclick: act(() => openAdoptDevice(r, ctx.refresh)) }, t("pp.rogue.manage")),
           r.allowed ? null : h("button", { type: "button", class: "btn sm", onclick: act(async () => { await api.post("/api/rogue/allow", { mac: r.mac }); toast(t("pp.rogue.allowed.done")); }) }, t("pp.rogue.allow")))))) : null);
 }

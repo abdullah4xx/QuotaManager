@@ -257,6 +257,14 @@ def _has_ipv6_addr(run: RunCommand, iface: str, addr: str) -> bool:
     return code == 0 and f" {addr}/" in (out or "")
 
 
+def _addr_exists_anywhere(run, ip: str) -> bool:
+    """True when the address is already configured on ANY interface."""
+    code, out = run(["ip", "-4", "-o", "addr", "show"])
+    if code != 0:
+        return False
+    return any(f" {ip}/" in line for line in out.splitlines())
+
+
 def ensure_network_infrastructure(
     *,
     ipv6_gateway: str = "",
@@ -320,11 +328,14 @@ def ensure_network_infrastructure(
                 needed[gw_cidr] = gateway_ip
 
     # Uplink / router-admin alias (required in both LAN and WAN mode).
+    # PATCH: skip when the uplink IP already lives on another interface
+    # (router setup: the uplink is a separate NIC/STA). Adding it here too
+    # would create a duplicate address and break the NAT reply path.
     if uplink_ip:
         ul_cidr = f"{uplink_ip}/{lan_cidr}"
         if ul_cidr not in addrs:
             matched = any(a.startswith(uplink_ip + "/") for a in addrs)
-            if not matched:
+            if not matched and not _addr_exists_anywhere(run, uplink_ip):
                 log.warning("LAN interface %s missing uplink alias %s — re-adding",
                             iface, ul_cidr)
                 needed[ul_cidr] = uplink_ip

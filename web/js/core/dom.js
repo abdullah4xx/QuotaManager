@@ -31,6 +31,17 @@ export function icon(name, size = 18) {
     const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
     p.setAttribute("d", d); svg.append(p);
   }
+  if (name === "we") {
+    const tx = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    tx.setAttribute("x", "12"); tx.setAttribute("y", "16");
+    tx.setAttribute("text-anchor", "middle");
+    tx.setAttribute("font-size", "10"); tx.setAttribute("font-weight", "700");
+    tx.setAttribute("font-family", "system-ui, sans-serif");
+    tx.setAttribute("letter-spacing", "-0.5");
+    tx.setAttribute("fill", "currentColor"); tx.setAttribute("stroke", "none");
+    tx.textContent = "we";
+    svg.append(tx);
+  }
   return svg;
 }
 export function mount(root, ...kids) { root.replaceChildren(); append(root, kids); }

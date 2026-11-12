@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipaddress
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, validator as field_validator
 
 
 def _cap_field() -> Field:
@@ -80,10 +80,10 @@ class UserUpdate(BaseModel):
     #: Guest flag — setting to false converts a guest user to a permanent regular user.
     guest: Optional[bool] = None
     #: Optional DAILY quota plan (see quota/daily_plan.py).
-    daily_mode: Optional[str] = Field(None, pattern="^(off|fixed|spread)$")
+    daily_mode: Optional[str] = Field(None, regex="^(off|fixed|spread)$")
     daily_gb: Optional[float] = Field(None, ge=0, le=100000)
-    daily_carry: Optional[str] = Field(None, pattern="^(next_day|spread)$")
-    daily_split: Optional[str] = Field(None, pattern="^(open|equal|fixed)$")
+    daily_carry: Optional[str] = Field(None, regex="^(next_day|spread)$")
+    daily_split: Optional[str] = Field(None, regex="^(open|equal|fixed)$")
     #: {"YYYY-MM-DD": GB} days with a bigger amount (replaces the whole map).
     daily_heavy: Optional[dict[str, float]] = None
     #: May the person edit carry/heavy days/split from the milestone page?
@@ -93,10 +93,10 @@ class UserUpdate(BaseModel):
 class DailyPreview(BaseModel):
     """A proposed plan to preview (nothing is saved)."""
 
-    mode: str = Field("spread", pattern="^(off|fixed|spread)$")
+    mode: str = Field("spread", regex="^(off|fixed|spread)$")
     daily_gb: float = Field(0.0, ge=0, le=100000)
-    carry: str = Field("spread", pattern="^(next_day|spread)$")
-    split: str = Field("open", pattern="^(open|equal|fixed)$")
+    carry: str = Field("spread", regex="^(next_day|spread)$")
+    split: str = Field("open", regex="^(open|equal|fixed)$")
     heavy: dict[str, float] = Field(default_factory=dict)
 
 
@@ -114,8 +114,8 @@ class RogueAction(BaseModel):
 class MilestoneDailyPlan(BaseModel):
     """What a person may change about their own daily plan (never the total)."""
 
-    carry: Optional[str] = Field(None, pattern="^(next_day|spread)$")
-    split: Optional[str] = Field(None, pattern="^(open|equal)$")
+    carry: Optional[str] = Field(None, regex="^(next_day|spread)$")
+    split: Optional[str] = Field(None, regex="^(open|equal)$")
     heavy: Optional[dict[str, float]] = None
 
 
@@ -311,9 +311,9 @@ class DomainRuleCreate(BaseModel):
     ``dns_server``, it is written directly into generated dnsmasq config.
     """
 
-    scope: str = Field("global", pattern="^(global|user|device)$")
+    scope: str = Field("global", regex="^(global|user|device)$")
     scope_id: Optional[int] = None
-    action: str = Field("block", pattern="^(block|allow|redirect)$")
+    action: str = Field("block", regex="^(block|allow|redirect)$")
     domain: str = Field(..., min_length=1, max_length=253)
     target_ip: Optional[str] = None
     enabled: bool = True
@@ -358,7 +358,7 @@ class DnsPresetEnable(BaseModel):
     <scope_id>'``; disabling — or re-enabling at a DIFFERENT scope — removes
     exactly those rows (see api/app.py's enable_dns_preset)."""
 
-    scope: str = Field("global", pattern="^(global|user|device)$")
+    scope: str = Field("global", regex="^(global|user|device)$")
     scope_id: Optional[int] = None
 
 
@@ -368,10 +368,10 @@ class DnsImportRequest(BaseModel):
     parser; "auto" tries hosts-format first, then AdBlock-Plus."""
 
     text: str = Field(..., min_length=1)
-    format: str = Field("auto", pattern="^(auto|hosts|adblock)$")
-    scope: str = Field("global", pattern="^(global|user|device)$")
+    format: str = Field("auto", regex="^(auto|hosts|adblock)$")
+    scope: str = Field("global", regex="^(global|user|device)$")
     scope_id: Optional[int] = None
-    action: str = Field("block", pattern="^(block|allow)$")
+    action: str = Field("block", regex="^(block|allow)$")
 
 
 class DnsQuickRule(BaseModel):
@@ -382,8 +382,8 @@ class DnsQuickRule(BaseModel):
     actually offers ("this device only" / "everyone")."""
 
     domain: str = Field(..., min_length=1, max_length=253)
-    action: str = Field(..., pattern="^(block|allow)$")
-    scope: str = Field(..., pattern="^(global|device)$")
+    action: str = Field(..., regex="^(block|allow)$")
+    scope: str = Field(..., regex="^(global|device)$")
     device_id: Optional[int] = None
 
 
@@ -432,11 +432,11 @@ class FirewallRule(BaseModel):
     """
 
     name: str = ""
-    chain: str = Field("forward", pattern="^(input|forward)$")
-    action: str = Field("deny", pattern="^(allow|deny)$")
+    chain: str = Field("forward", regex="^(input|forward)$")
+    action: str = Field("deny", regex="^(allow|deny)$")
     src: str = ""
     dst: str = ""
-    protocol: str = Field("", pattern="^(|tcp|udp|icmp)$")
+    protocol: str = Field("", regex="^(|tcp|udp|icmp)$")
     src_port: int = Field(0, ge=0, le=65535)
     dst_port: int = Field(0, ge=0, le=65535)
     log: bool = True
@@ -446,7 +446,7 @@ class FirewallService(BaseModel):
     """A box service exposed on the internet under WAN mode."""
 
     name: str = ""
-    protocol: str = Field("tcp", pattern="^(tcp|udp)$")
+    protocol: str = Field("tcp", regex="^(tcp|udp)$")
     port: int = Field(..., ge=1, le=65535)
     source: str = "0.0.0.0/0"
 
@@ -455,7 +455,7 @@ class FirewallPortForward(BaseModel):
     """WAN-mode inbound port forward (dnat to an internal host)."""
 
     name: str = ""
-    protocol: str = Field("tcp", pattern="^(tcp|udp)$")
+    protocol: str = Field("tcp", regex="^(tcp|udp)$")
     source_port: int = Field(..., ge=1, le=65535)
     target_ip: str = ""
     target_port: int = Field(..., ge=1, le=65535)
@@ -621,7 +621,7 @@ class VpnConnectRequest(BaseModel):
 
 class VpnRoutingUpdateRequest(BaseModel):
     """Toggle VPN routing for a specific user or device."""
-    target_type: str = Field(..., pattern="^(user|device)$")
+    target_type: str = Field(..., regex="^(user|device)$")
     target_id: int
     route_vpn: bool = True
 

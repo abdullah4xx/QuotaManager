@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>My quota — Quota Manager</title>
+<link rel="manifest" href="/milestone.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<meta name="theme-color" content="#5B8CFF">
 <link rel="stylesheet" href="/css/tokens.css">
 <link rel="stylesheet" href="/assets/pub.css?v=1">
 <script src="/assets/pub-theme.js"></script>
@@ -314,6 +318,14 @@
   document.getElementById('ms-refresh').addEventListener('click', load);
   load();
 })();
+</script>
+<script>
+  // milestone PWA: register the app shell worker (fails silently on
+  // plain http — the install still works from the Chrome menu).
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/milestone-sw.js", { scope: "/" })
+      .catch(() => {});
+  }
 </script>
 </body>
 </html>

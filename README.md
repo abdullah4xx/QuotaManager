@@ -1,241 +1,273 @@
-<p align="center">
+# Quota Manager — OpenWrt edition (fork `abdullah4xx/QuotaManager`)
+
+<div align="center">
   <img src="docs/logo/logo.svg" width="96" height="96" alt="Quota Manager logo">
-</p>
+</div>
 
-<h1 align="center">Quota Manager</h1>
-
-<p align="center">
-  Share one limited internet bundle fairly between everyone at home.
-</p>
+<h1 align="center">Quota Manager for OpenWrt</h1>
 
 <p align="center">
-  <a href="README_AR.md"><img src="https://img.shields.io/badge/العربية-Arabic-blue" alt="Arabic"></a>
-  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
+  <b>Share one limited internet bundle fairly between everyone at home — on an OpenWrt router.</b>
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/overview-en.png" alt="Quota Manager dashboard — overview"><br><br>
-  <img src="docs/screenshots/people-en.png" alt="People and devices">
-</p>
+> This is a **fork** of [UserJoo9/QuotaManager](https://github.com/UserJoo9/QuotaManager) (MIT).
+> The whole engine — byte counting, allowances, the daily split, the VPN — is the
+> developer's **original code, untouched**. Every change here lives in a separate,
+> **idempotent** patch under [`patches/`](patches/) so it re-applies cleanly after
+> any upstream update.
+>
+> Arabic version: **[README_AR.md](README_AR.md)**
+
+**Tested on:** D-Link **DIR-853 A3** (MediaTek MT7621 — mipsel), **OpenWrt 25.12.6**,
+with a USB flash used as the permanent system disk.
 
 ---
 
 ## What it does
 
-Every person gets a monthly allowance (a fixed number of GB, or an equal share of what's left). All of their devices share it. When it runs out, **their devices are cut off** — nobody else is affected.
+Every person gets an allowance (a fixed number of GB, or an equal share of what's
+left). All of their devices share it. When it runs out, **their devices are cut
+off** — nobody else is affected.
 
 - See who used how much, live, per person and per device
-- Set speed limits and keep gaming ping low while others download
+- Speed limits and low ping for gaming
 - Block, kick or pause any device in one tap
 - Block ads and adult/gambling sites for the whole house
-- Built-in VPN, firewall, file sharing between devices, and remote access from anywhere (Tailscale)
-- Works in **English and Arabic**, light and dark, on phone and desktop
+- Built-in VPN, file sharing, and remote access (Tailscale)
+- English and Arabic, light and dark, phone and desktop
 
-## How it works
-
-A small always-on computer sits between your router and your devices. Your router keeps WiFi; this computer hands out the addresses and counts the traffic.
-
-<p align="center">
-  <img src="docs/diagrams/EN_sketch_diagram.png" width="640" alt="How Quota Manager connects">
-</p>
+Every person also gets **their own usage page**: `/milestone` — **no login**
+(the person is resolved from their own device).
 
 ---
 
-## Install
+## Why this fork?
 
-You need **one always-on device** connected to your router **by cable**. Pick yours:
+| Obstacle | Fix in this fork |
+|---|---|
+| No `pydantic-core` wheel for mipsel | `patch_pydantic_v1.py` — back to pydantic v1 |
+| Storage space runs out | database + logs on the **flash** (not RAM) + daily backups |
+| A reboot wiped every user | `db_path` on flash + a **restore-if-missing** block in the init script |
+| New devices auto-registered as empty users | `patch_no_autoreg.py` — **Manage first** |
+| The Manage button spawned a stray user | `patch_manage_user_picker.py` — pick the person + delete the temp user |
+| Ordinary people couldn't reach their page | `patch_login_user_page.py` — a "My page" button on the login screen |
+| The page couldn't be installed | `patch_milestone_pwa.py` — manifest + service worker + icons |
+| 30-minute login lockout | `patch_login_throttle.py` |
+| Duplicate uplink address | `patch_uplink_alias.py` |
+| VPN: the bundled `sing-box` is amd64 | a **mipsle-softfloat** build is documented below |
 
-| Your device | Best for | Go to |
-|---|---|---|
-| Old laptop / mini PC / desktop (Debian, Kali, Ubuntu) | Most people | [Linux PC](#linux-pc-or-laptop) |
-| Raspberry Pi | Low power, silent | [Raspberry Pi](#raspberry-pi) |
-| Windows or Mac you already use | No spare device | [Virtual machine](#windows--mac-virtual-machine) |
-| Old rooted Android phone | 2–5 W, battery backup | [Android](#old-android-phone-rooted) |
-| OpenWrt router | Advanced | [OpenWrt](#openwrt-router) |
+---
 
-> Wi-Fi can't be used for the gateway itself — it must be plugged in with a cable (a cheap USB-to-Ethernet adapter works). It must stay on 24/7: if it is off, nobody has internet.
+## Quick install
 
-### Linux PC or laptop
+### 1) Router prep (extroot on the flash)
 
-Works on **Debian, Kali and Ubuntu** (apt), **Fedora** (rpm), **Arch / Manjaro** (pacman) and any other systemd distro (tarball). Debian-family first. Run in a terminal:
+You need a **USB flash** (8 GB is enough) and OpenWrt 25.12.
 
-```bash
-sudo apt-get update
-sudo install -d /etc/apt/keyrings
-curl -fsSL https://UserJoo9.github.io/QuotaManager/quota-manager.gpg | \
-  sudo gpg --dearmor -o /etc/apt/keyrings/quota-manager.gpg
-echo "deb [signed-by=/etc/apt/keyrings/quota-manager.gpg] https://UserJoo9.github.io/QuotaManager stable main" | \
-  sudo tee /etc/apt/sources.list.d/quota-manager.list
-sudo apt-get update
-sudo apt-get install quota-manager
+```sh
+apk update
+apk add parted lsblk e2fsprogs block-mount
 ```
 
-Prefer a single file? Download `quota-manager_<version>_all.deb` from [Releases](https://github.com/UserJoo9/QuotaManager/releases) and run `sudo apt install ./quota-manager_*_all.deb`.
+Then partition the flash as ext4 and enable extroot — the full walkthrough is in
+**[`openwrt/README-extroot.md`](openwrt/README-extroot.md)**.
 
-**Other distros** - download the matching file from [Releases](https://github.com/UserJoo9/QuotaManager/releases):
+> **Order matters:** `usb-flash` must mount **before** `quota-manager` starts.
 
-```bash
-# Fedora / RHEL family
-sudo dnf install ./quota-manager-<version>-1.noarch.rpm
+### 2) Install QuotaManager
 
-# Arch / Manjaro
-sudo pacman -U quota-manager-<version>-1-any.pkg.tar.zst
-
-# Any other systemd distro
-tar xzf quota-manager-<version>.tar.gz && cd quota-manager-<version> && sudo ./install.sh
-```
-
-The in-app updater picks the right file for how you installed. Fedora and Arch support is new: if your box runs SELinux or firewalld and forwarded traffic is blocked, set `QUOTA_DISABLE_FIREWALLD=1` before installing, or open an issue with the output.
-
-Then continue with [First setup](#first-setup).
-
-### Raspberry Pi
-
-1. Install **Raspberry Pi OS** (64-bit, Lite is fine) with Raspberry Pi Imager.
-2. Plug it into the router with an Ethernet cable.
-3. Follow the [Linux PC](#linux-pc-or-laptop) steps above, then [First setup](#first-setup).
-
-### Windows / Mac (virtual machine)
-
-No spare device? Run the gateway inside a Debian virtual machine on the computer you already have.
-
-1. Install **VirtualBox** or **VMware**, and create a **Debian** VM.
-2. Set the VM network to **Bridged** and pick the **Ethernet (cable)** adapter. *(VMware: Edit → Virtual Network Editor → `VMnet0` → "Bridged to" → your Ethernet card; leave it off "Automatic".)*
-3. Plug the computer into the router with a **cable**, then restart the VM.
-4. Install the package inside the VM using the [Linux PC](#linux-pc-or-laptop) steps.
-5. The computer must stay on, and wired, while you want the limits to work.
-
-> **Do not bridge to Wi-Fi.** A Wi-Fi bridge shares one address with the VM, so the VM can browse the internet but never sees the other devices' traffic. Everything *looks* connected, yet devices show "connected, no internet", the counters stay at 0 and speed limits do nothing. If you have no cable, use a **USB Ethernet adapter** passed through to the VM (it behaves like a cable).
-
-**Quick check inside the VM:**
-
-```bash
-ip -br a                       # the card should hold your router-side IP and 192.168.2.1
-ping -c2 192.168.1.1           # your router; around 1 ms on a cable, several ms on Wi-Fi
-sudo nft list counters | grep -A2 q_up_192_168_2   # bytes grow while a phone browses
-```
-
-The card is found automatically (the one holding `192.168.2.1`), so a different name such as `ens34` is fine. After changing the VM's network, restart with `sudo systemctl restart quota-gateway`.
-
-Great for trying Quota Manager before buying anything.
-
-### Old Android phone (rooted)
-
-Android 7–14 with root, plus a USB-C/OTG hub with an **Ethernet port and charging pass-through**.
-
-1. Plug the hub into the router with a cable.
-2. Install a Debian 12 (ARM64) chroot (for example with LinuxDeploy) and open its terminal as root.
-3. Follow the [Linux PC](#linux-pc-or-laptop) steps inside it, then [First setup](#first-setup).
-
-Tip: limit charging to 60–70 % (ACC app) so the battery lasts.
-
-### OpenWrt router
-
-OpenWrt 22.03+ with 128 MB+ RAM (on small-flash routers, use a USB drive with ExtRoot).
-
-OpenWrt 25.12 replaced `opkg` with `apk`; the installer below detects which one your router has (22.03-24.10 use `opkg`):
-
-```bash
-wget -O /tmp/install_openwrt.sh https://raw.githubusercontent.com/UserJoo9/QuotaManager/main/scripts/install_openwrt.sh
+```sh
+wget -O /tmp/install_openwrt.sh https://raw.githubusercontent.com/abdullah4xx/QuotaManager/main/scripts/install_openwrt.sh
 sh /tmp/install_openwrt.sh
 ```
 
-> OpenWrt support is **experimental**: x86_64 and aarch64 routers/PCs work best (the Python packages ship ready-made binaries for them). If it fails, open an issue with the full output.
+### 3) Apply the patches (after every upstream update)
 
----
-
-## First setup
-
-**1. Turn off DHCP on your router.** Open your router's page (usually `http://192.168.1.1`), find *DHCP / LAN* and switch DHCP **off**. Keep **Wi-Fi** and **NAT** on. Also turn off **IPv6 / Router Advertisement** if you see it.
-
-**2. Reconnect your devices** (toggle airplane mode or Wi-Fi) so they get a new address from the gateway.
-
-**3. Open the dashboard** from any device:
-
-```
-http://192.168.2.1:8080
+```sh
+cd /opt/QuotaManager
+for p in patches/patch_*.py; do python3 "$p" .; done
+/etc/init.d/quota-manager restart
 ```
 
-Password: **`admin`** — you'll be asked to change it right away.
+Every patch is **idempotent** — run it twice and nothing changes; the second run
+prints `already patched`.
 
-**4. Fill in the welcome screen:** your bundle size (e.g. `140` GB) and the day your provider renews it.
+### 4) Move the database onto the flash (so no reboot can lose it)
 
-**5. Give people allowances.** New devices appear on their own, but start **disabled** (0 GB) as a safety lock. Add a person, assign the device to them, and set their share.
+```sh
+mkdir -p /opt/quota-data/backups
+cp /var/lib/quota-gateway/quota.db /opt/quota-data/quota.db
+sed -i 's|db_path: /var/lib/quota-gateway/quota.db|db_path: /opt/quota-data/quota.db|' /opt/QuotaManager/config.yaml
+```
 
-> Can't open the dashboard? A device that still has an old address needs to reconnect. You can also try `http://192.168.1.110:8080`.
->
-> Give the gateway a fixed address (reserve it on the router) — if its address changes, nobody gets internet.
+Copy `openwrt/quota-manager.initd` over `/etc/init.d/quota-manager` (it contains a
+**restore-if-missing** block that brings the database back from the newest
+automatic backup if it ever disappears), and `openwrt/quota-data-backup.sh` to
+`/opt/quota-data/backup.sh`, then add the daily cron:
+
+```sh
+echo "17 3 * * * /opt/quota-data/backup.sh >/dev/null 2>&1" >> /etc/crontabs/root
+/etc/init.d/cron restart
+```
+
+> ⚠️ **Why this matters:** on OpenWrt `/var` is a symlink to `/tmp` (tmpfs) — a
+> database living in `/var/lib` is wiped **on every reboot**. That was the real
+> cause of "my users disappeared".
 
 ---
 
-## Reach the dashboard from outside your home
+## The patches
 
-Many internet lines block or drop connections coming from outside, so opening a port on your public IP often does not work. Use the built-in **Tailscale** instead: **Internet → Remote access → Install**, sign in once, then install the Tailscale app on your phone with the same account and open the address shown on that card. Nothing is opened on your public IP, so keep the "Allow dashboard access from the internet" switch off.
+| Patch | File | What it does |
+|---|---|---|
+| pydantic v1 | `patch_pydantic_v1.py` | pydantic v1 + FastAPI 0.99 (mipsel) |
+| uplink alias | `patch_uplink_alias.py` | stops the uplink IP being duplicated on WAN and LAN |
+| login throttle | `patch_login_throttle.py` | raises the lockout constants (no logic change) |
+| Manage first | `patch_no_autoreg.py` | a brand-new device is **not** auto-registered — it waits under *Unmanaged devices* until you press **Manage** |
+| person picker | `patch_manage_user_picker.py` | the Manage dialog asks which person it belongs to, and **deletes the throwaway user** the adopt used to create |
+| my-page button | `patch_login_user_page.py` | a "My page" button on the login screen → `/milestone` |
+| PWA | `patch_milestone_pwa.py` | manifest + service worker + icons → the page installs as an app |
+| WE portal | `patch_we_portal.py` | a "WE" link in the sidebar (TE Data portal) |
 
 ---
 
-## Using it
+## After the install
 
-| Page | What you do there |
+1. **Network**: LAN `192.168.2.0/24` (DHCP `.100–.199`), WAN wired static
+   `192.168.1.66/24` + gateway `192.168.1.1` (the ISP router).
+2. **Bundle**: **Quota** page → bundle size (e.g. 200 GB) + renewal day.
+3. **People**: **People** page → add a person and give them an allowance:
+   - `abdullah / mama / baba / mariam / haneen` → **auto** (equal share)
+   - `fawry` → **fixed**, 2 GB
+4. **Devices**: a new device appears under **Unmanaged devices** → press
+   **Manage** → pick the person → it is registered as their device instantly
+   (and no empty user is left behind).
+5. **Service**:
+   ```sh
+   ps | grep run.py                 # is it running?
+   tail -f /var/log/quota-gateway/quota.log
+   /etc/init.d/quota-manager restart
+   ```
+
+---
+
+## The user's own page (+ installable app)
+
+Each person opens this **from their registered device**:
+
+```
+http://192.168.2.1:8080/milestone
+```
+
+- **No login** — the app resolves the person from the device's IP
+  (DHCP lease → device → person).
+- Shows: their allowance, usage, percentage, the 50/75/100 % markers, the usage
+  of each of their devices, and **their daily plan**.
+- **Installable as an app in Chrome**: ⋮ menu → *Cast, save and share → Install
+  page as app*. The manifest, service worker and icons ship with
+  `patch_milestone_pwa.py`.
+- The login screen carries a **"My page"** button that takes people straight there.
+
+---
+
+## Daily quota and the split
+
+**Quota** → switch the daily quota on → the person's card → **Daily plan**:
+
+- **fixed**: a fixed number of GB per day.
+- **spread**: split what is left of the month over the days that are left.
+- carry policy (unused GB to the next day, or spread out), heavier days, and how
+  the day's allowance is shared between their devices.
+
+**Self-editing:** with `daily_self_edit` enabled for a person, they can adjust
+the **pacing** from their own page (`/milestone`) — carry policy and heavy days
+— but they can **never** change their own total. The developer's protections
+stay in place: no admin session, a CSRF header, and 10 edits per minute.
+
+Enable it directly in the database:
+
+```sh
+python3 - <<'EOF'
+import sqlite3
+c = sqlite3.connect("/opt/quota-data/quota.db")
+c.execute("insert or replace into settings(key,value) values('daily_quota_enabled','1')")
+c.execute("update users set daily_mode='spread', daily_self_edit=1 where name in "
+          "('abdullah','mama','baba','mariam','haneen')")
+c.commit()
+EOF
+```
+
+---
+
+## VPN on the router
+
+The bundled `bin/sing-box` is an **amd64** binary — it cannot run on an MT7621
+(mipsel). Use the matching build:
+
+```sh
+wget -O /tmp/sb.tar.gz \
+  https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-mipsle-softfloat-musl.tar.gz
+tar xzf /tmp/sb.tar.gz -C /tmp
+cp /tmp/sing-box-1.14.4-linux-mipsle-softfloat-musl/sing-box /opt/QuotaManager/bin/sing-box
+chmod +x /opt/QuotaManager/bin/sing-box
+/opt/QuotaManager/bin/sing-box version   # must print: linux/mipsle
+```
+
+`geoip.dat` and `geosite.dat` are plain data — architecture independent, they work
+as shipped.
+
+---
+
+## WiFi tuning (Egypt)
+
+The legal limits for `country EG`:
+
+| Band | Legal maximum | Suggested channel |
+|---|---|---|
+| 2.4 GHz | **20 dBm** | 1 / 6 / 11 (pick the quietest) |
+| 5 GHz | **23 dBm** (5150–5250) | 36 / 40 / 44 / 48 |
+
+- ⚠️ The **5470–5725 band (channel 149) is not in the Egyptian regdomain** — put it
+  there and the radio drops to 9 dBm. Use 36–48.
+- Above the ceiling the driver ignores you; without `country` OpenWrt simply
+  gives you less power.
+- `powersave '0'` and `legacy_rates '0'` → more throughput, lower ping.
+- **Never run a STA (client) on the same radio as the AP** — that is what made the
+  2.4 GHz drop: the radio follows the other network's channel and the AP falls
+  over. Use a **wired uplink**, or put the STA on the other band.
+
+Ready-made scripts: `openwrt/scripts/apply_wifi.sh` and `final_wifi.sh`.
+
+---
+
+## Key files
+
+| File | Purpose |
 |---|---|
-| **Overview** | Remaining bundle, days left, live speed and who is using it right now |
-| **People & devices** | Add people, move devices, top up GB, speed limits, block or kick |
-| **Quota** | Bundle size, renewal day, top-up packs, optional daily quota switch |
-| **Network** | Guest mode, new-device rules, IP reservations, allow / block lists |
-| **Internet** | Line status, public IP, direct PPPoE mode, remote access with Tailscale |
-| **Security** | Firewall, ad & content blocking, HTTPS |
-| **VPN** | Add servers, choose who goes through the VPN |
-| **Insights** | Daily usage, top devices, most visited domains |
-| **Share** | Send files and folders between devices, even straight to a nearby device |
-| **System** | Language, light/dark, colour themes, password and 2FA, updates, logs |
-
-Handy to know:
-
-- **Top up** a person mid-month from their card — they're back online instantly.
-- **Eye icon** hides names and MAC addresses, handy before showing your screen.
-- **Daily quota (optional):** switch it on in **Quota**, then open a person's card → **Daily plan**. Choose *fixed GB per day* or *split what is left of the month over the days left*, what happens to unused GB (next day or spread), heavier days, and how the person's devices share the day. The monthly quota still applies; at the daily limit the devices pause until midnight. The person sees today's plan on their usage page.
-- **My usage page:** any device can open `http://192.168.2.1:8080/milestone` (no login) to see its own remaining allowance.
-- The dashboard opens at the same address as always (`http://<gateway>:8080/`). Old bookmarks to `/ui/` forward there automatically.
-- **WAN | LAN switch** above the Overview chart: the same live speed, daily usage and top devices, for the internet or for traffic inside your home (NAS, router, the gateway itself).
-- **Sharing**: drop files or folders on the Share page, or send them straight to another device on the WiFi (up to 50 MB; several files or folders arrive as one ZIP).
-- Risky buttons (kick, blacklist, enable HTTPS, remove an allow/block entry, clear all) ask you to **tap twice** — the second tap confirms.
+| `patches/` | every patch (idempotent) — re-run them after each update |
+| `openwrt/quota-manager.initd` | init script with the restore-if-missing block |
+| `openwrt/quota-data-backup.sh` | daily backup (7 copies + a mirror) |
+| `openwrt/config.router.yaml` | QuotaManager config tuned for the router |
+| `openwrt/scripts/` | WiFi tuning scripts + an SSH helper |
+| `openwrt/pwa-icons/` | app icons (192 / 512 / maskable) |
 
 ---
-
-## Update & remove
-
-The dashboard checks for updates itself (**System → Updates**) and can install them in one click. Your settings and data are kept.
-
-```bash
-sudo apt-get update && sudo apt-get install --only-upgrade quota-manager   # update
-sudo apt remove quota-manager                                              # remove, keep data
-sudo apt purge quota-manager                                               # remove everything
-```
-
-Your data lives in `/var/lib/quota-gateway/quota.db` — copy it now and then as a backup.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| No internet after setup | Make sure router DHCP is **off**, then reconnect the device |
-| Device has internet but isn't counted | Turn off IPv6 / Router Advertisement on the router |
-| A computer has no internet and shows under *Unmanaged devices* | It uses a **manually typed IP**. Set it to obtain an IP **automatically (DHCP)**; to keep one fixed address, reserve it for that device in the dashboard instead |
-| Running in a VM: devices connect but no internet, counters stay 0 | The VM is bridged to Wi-Fi. Bridge it to the **Ethernet** card (see [virtual machine](#windows--mac-virtual-machine)) |
-| Install says "no installation candidate" | Run `sudo apt-get update` first |
-| Everything stopped after a reboot | `sudo systemctl enable --now quota-gateway` |
-| Forgot the password | Ask in an issue, or see the developer guide below |
-| Speed limits do nothing | Network page → turn shaping on and enter your real line speed |
-
-## Good to know
-
-- Usage is counted every ~15 seconds, so numbers are approximate.
-- Over-limit users are fully cut off, not slowed.
-- If the gateway loses power, the home network loses internet.
-- Deleting a device blocks it for good until you remove it from the block list.
-- One admin session at a time: signing in on another device signs the first one out, and changing the password signs out everywhere.
-- In **LAN** mode, firewall rules whose source is your home network have no effect (home devices are always allowed); use blocks or switch to **WAN** mode to restrict them.
+| Users vanished after a reboot | the DB is still on RAM → see *Move the database onto the flash* above |
+| `sing-box binary not found` | the bundled binary is amd64 → install the mipsle build above |
+| A new device doesn't show up | **People → Unmanaged devices → Manage** (by design, not automatic) |
+| `invalid credentials` with a short password | the app requires 12 characters — write the hash straight into the DB (see `openwrt/README-extroot.md`) |
+| 30-minute lockout after a few tries | `patch_login_throttle.py` |
+| The page doesn't refresh after an edit | force-reload the browser (Ctrl+Shift+R) |
+| `pydantic` errors | `patch_pydantic_v1.py` |
 
 ---
 
-**Developers:** see [Structure_README.md](Structure_README.md) · **License:** [MIT](LICENSE) · Not affiliated with any ISP.
+## License
+
+- Original project by [UserJoo9](https://github.com/UserJoo9/QuotaManager) — MIT.
+- This fork keeps the same license. Not affiliated with any ISP.

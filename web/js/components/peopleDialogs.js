@@ -1,4 +1,5 @@
 import { h } from "../core/dom.js";
+import { api } from "../core/api.js";
 import { t } from "../core/i18n.js";
 import { actions } from "../core/actions.js";
 import { openDialog } from "./dialog.js";
@@ -46,4 +47,30 @@ export function openAddDevice(users, refresh) {
       if (q.mode.value === "fixed" && !owner.value) body.fixed_gb = nn(q.gb);
       await actions.createDevice(body); toast(t("add.done")); await refresh(); return true;
     } });
+}
+
+
+// manage-first PATCH: register the device AND pick its person in one step
+export function openAdoptDevice(rogue, refresh) {
+  const name = h("input", { class: "input" });
+  const owner = h("select", { class: "select" },
+    h("option", { value: "" }, t("add.dev.owner.later")));
+  openDialog({ title: t("pp.rogue.manage"),
+    sub: [rogue.mac, rogue.ip].filter(Boolean).join(" - "),
+    submitLabel: t("add.submit"),
+    content: [f(t("add.dev.name"), name), f(t("add.dev.owner"), owner),
+      h("span", { class: "sub" }, t("pp.rogue.manage.hint"))],
+    onSubmit: async () => {
+      const res = await api.post("/api/rogue/adopt",
+        { mac: rogue.mac, ip: rogue.ip || "", name: name.value.trim() });
+      if (owner.value) {
+        await api.patch("/api/devices/" + res.id, { user_id: +owner.value });
+        if (res.user_id) await api.del("/api/users/" + res.user_id);
+      }
+      toast(t("pp.rogue.adopted")); await refresh(); return true;
+    } });
+  api.get("/api/users").then((us) =>
+    us.filter((u) => !u.protected && u.name)
+      .forEach((u) => owner.append(h("option", { value: String(u.id) }, u.name))))
+    .catch(() => {});
 }

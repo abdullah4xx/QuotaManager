@@ -1,0 +1,37 @@
+{
+  "name": "QuotaManager — صفحتي",
+  "short_name": "صفحتي",
+  "description": "نصيبي من باقة الشبكة وتقسيمي اليومي، من غير تسجيل دخول.",
+  "lang": "ar",
+  "start_url": "/milestone",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#5B8CFF",
+  "background_color": "#101322",
+  "icons": [
+    {
+      "src": "/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

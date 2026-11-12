@@ -33,6 +33,7 @@ const ROUTES = [
   { id: "insights", icon: "insights", group: "nav.tools", page: insightsPage },
   { id: "share", icon: "share", group: "nav.tools", page: sharePage },
   { id: "system", icon: "system", group: "nav.tools", page: system },
+  { id: "we", icon: "we", group: "nav.tools", external: "https://my.te.eg/echannel/#/login" },
 ];
 const store = createStore({ authed: null, dashboard: null, live: false, route: "overview", navOpen: false });
 let stopLive = null, offTimer = null;
@@ -52,6 +53,11 @@ function renderLogin(step = "password", error = "") {
   const label = step === "totp" ? t("login.verify") : t("login.submit");
   const btn = h("button", { class: "btn primary", type: "submit" }, label);
   const busy = (on) => { btn.disabled = on; btn.textContent = on ? t("login.wait") : label; btn.setAttribute("aria-busy", String(on)); };
+  // user-page PATCH: send the household user to their own public
+  // milestone page (the person is resolved from the device IP, no login)
+  const userBtn = h("button", { class: "btn ghost", type: "button",
+    style: { width: "100%", marginTop: "10px" }, title: t("login.my.page.hint"),
+    onclick: () => { location.href = "/milestone"; } }, t("login.my.page"));
   const form = h("form", { class: "login-card", onsubmit: async (e) => {
     e.preventDefault();
     if (loginBusy) return;
@@ -73,7 +79,8 @@ function renderLogin(step = "password", error = "") {
     h("img", { class: "logo-lg", src: "logo.svg", alt: "" }),
     h("div", {}, h("h1", {}, t("login.title")), h("p", {}, t("login.sub"))),
     step === "totp" ? code : pw, err,
-    btn);
+    btn,
+    userBtn);
   mount(document.getElementById("root"), h("div", { class: "login" }, form));
   (step === "totp" ? code : pw).focus();
 }
@@ -88,7 +95,10 @@ function sidebar(s) {
       h("button", { type: "button", class: "collapse-btn", "aria-label": rail ? t("common.expand") : t("common.collapse"), title: rail ? t("common.expand") : t("common.collapse"),
         onclick: () => { setPref("rail", !rail); renderShell(); } }, icon("panel", 18))),
     h("nav", { class: "nav", "aria-label": "Main" }, groups.map((g) => h("div", { class: "nav-group" }, h("div", { class: "nav-glabel" }, t(g.k)),
-      g.items.map((r) => h("a", { class: "nav-i" + (s.route === r.id ? " on" : ""), href: "#/" + r.id, title: t("nav." + r.id), "aria-current": s.route === r.id ? "page" : null, onclick: () => store.set({ navOpen: false }) },
+      g.items.map((r) => r.external
+        ? h("a", { class: "nav-i", href: r.external, target: "_blank", rel: "noopener noreferrer", title: t("nav." + r.id), onclick: () => store.set({ navOpen: false }) },
+          icon(r.icon), h("span", { class: "nav-t" }, t("nav." + r.id)))
+        : h("a", { class: "nav-i" + (s.route === r.id ? " on" : ""), href: "#/" + r.id, title: t("nav." + r.id), "aria-current": s.route === r.id ? "page" : null, onclick: () => store.set({ navOpen: false }) },
         icon(r.icon), h("span", { class: "nav-t" }, t("nav." + r.id)),
         r.count && s.dashboard ? h("span", { class: "nav-badge" }, num(s.dashboard.users.filter((u) => !u.protected).length, 0)) : null))))),
     b ? h("div", { class: "side-meter" }, h("div", { class: "sm-top" }, h("span", {}, t("side.bundle")), h("b", {}, num(pct, 0) + "%")),

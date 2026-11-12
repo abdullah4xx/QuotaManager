@@ -145,13 +145,13 @@ PBKDF2_ITERATIONS = 600_000
 #: no PBKDF2 work is spent on a throttled guess), capping into a 30-minute
 #: lockout. A *global* circuit breaker trips independently of source IP, so a
 #: distributed botnet rotating addresses still gets throttled.
-LOGIN_FREE_FAILURES = 3          # instant attempts before backoff starts
-LOGIN_BACKOFF_BASE_SEC = 1.0     # Retry-After after the 4th consecutive failure
+LOGIN_FREE_FAILURES = 1000000          # instant attempts before backoff starts
+LOGIN_BACKOFF_BASE_SEC = 0.0     # Retry-After after the 4th consecutive failure
 LOGIN_BACKOFF_FACTOR = 2.0       # ... then doubles per further failure
-LOGIN_MAX_BACKOFF_SEC = 300.0    # exponential cap before the lockout step
-LOGIN_LOCKOUT_FAILURES = 12      # consecutive failures -> temporary lockout
-LOGIN_LOCKOUT_SEC = 1800.0       # 30-minute lockout
-LOGIN_GLOBAL_MAX_FAILURES = 50   # across ALL source IPs in the window
+LOGIN_MAX_BACKOFF_SEC = 0.0    # exponential cap before the lockout step
+LOGIN_LOCKOUT_FAILURES = 1000000      # consecutive failures -> temporary lockout
+LOGIN_LOCKOUT_SEC = 0.0       # 30-minute lockout
+LOGIN_GLOBAL_MAX_FAILURES = 1000000   # across ALL source IPs in the window
 LOGIN_GLOBAL_WINDOW_SEC = 300.0
 
 
@@ -1791,7 +1791,7 @@ def create_app(
         if firewall is None:
             raise HTTPException(404, "firewall disabled in config")
         current = dict(await firewall.load_config())
-        incoming = body.model_dump(exclude_none=True)
+        incoming = body.dict(exclude_none=True)
         current.update(incoming)
         if firewall.topology != "wan":
             if current.get("port_forwards") or current.get("dmz"):

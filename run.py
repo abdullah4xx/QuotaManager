@@ -952,16 +952,15 @@ class Gateway:
                         f"New GUEST on network: {dev.mac} ({ip}) — "
                         f"awaiting admin approval", "info", dev.id)
                 else:
-                    # Brand-new device: mint its user in the DISABLED
-                    # onboarding lock — 0 GB, no auto share, kernel-cut until
-                    # the admin assigns shared or fixed in the modal.
-                    dev = await self.database.upsert_device(
-                        mac, name="", quota_mode=_db.QUOTA_DISABLED,
-                        fixed_gb=0.0)
-                    await self.database.add_event(
-                        f"New device on network: {dev.mac} ({ip}) — "
-                        f"quota unassigned (0 GB, awaiting admin)",
-                        "info", dev.id)
+                    # manage-first PATCH: a brand-new device stays
+                    # UNMANAGED - no device row, no user row, no share.
+                    # It shows up in People > Unmanaged devices (rogue
+                    # scan) and stays cut off until the admin presses
+                    # Manage and picks a person.
+                    log.info("new MAC %s (%s) stays unmanaged - adopt it"
+                             " from People > Unmanaged devices > Manage",
+                             mac, ip)
+                    return
                 # A brand-new device must receive its allowance BEFORE the
                 # next evaluate_blocks run, or allowances.get(mac) returns 0.0
                 # and the device is instantly blocked for "quota exceeded".
@@ -1265,8 +1264,16 @@ class Gateway:
             return  # never built (startup ordering) — nothing to scan
         try:
             leases = await self.database.list_leases()
-            known = {l.mac for l in leases}
+            # manage-first PATCH: only MACs with a device row are known,
+            # so a DHCP client the admin has not adopted yet shows up as
+            # a rogue below (People > Unmanaged devices > Manage).
+            devices = {d.mac for d in await self.database.list_devices()}
+            known = {l.mac for l in leases if l.mac in devices}
             known |= set(await self.service.static_hosts())  # adopted static-IP devices
+            known |= {m.lower() for m in await self.database.get_mac_list("deny")}
+            known |= {m.lower() for m in await self.service.refused_macs()}
+            known |= {m.lower() for m in await self.service.refused_random_macs()}
+            known |= {m.lower() for m in self.service.active_kicked_macs()}
             rogues = await asyncio.to_thread(self.arp_scanner.scan, known)
         except Exception:  # noqa: BLE001
             log.exception("rogue LAN scan failed")
