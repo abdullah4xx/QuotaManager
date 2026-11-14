@@ -267,6 +267,21 @@ Ready-made scripts: `openwrt/scripts/apply_wifi.sh` and `final_wifi.sh`.
 
 ---
 
+## ⚠️ Gotchas we hit on OpenWrt (read before configuring quotas)
+
+| Trap | What happens | What to do |
+|---|---|---|
+| **`allow` list** | The dev's *Manage/adopt* flow puts every new MAC in the allow list (`api/app.py`: `add_mac_list("allow", [mac])`), and an allow-listed MAC is **never quota-blocked** — it silently ignores its person's quota **and** the daily device caps | `patches/patch_manage_user_picker.py` (v3) removes the MAC right after the adopt. Re-run the patches after every update |
+| **allowance 0 ≠ cut** | For a normal user, a 0 GB allowance means *unmetered* (the dev's `no allowance => unmetered` guard) — the cut only happens once the usage exceeds it | use `quota_mode: "disabled"` (the onboarding lock) to cut someone immediately |
+| **top-ups *and* packs add up** | `allowance = fixed_gb + topup_gb + active user-targeted packs` — a 19 GB pack on top of `fixed 19` gives **38** | keep one of them, not both |
+| **`reset-month`** | clears the period usage **and** the top-ups (packs are rolled over, not cleared) | re-check the numbers after a reset |
+| **one admin session** | every `/api/login` rotates the session token and kicks the other session | reuse one cookie; re-login on `{"detail":"not logged in"}` |
+| **shaping needs two switches** | `config.yaml: shaping.enabled: true` **and** the line speed in the DB (`POST /api/network`) | both, or the per-user speed caps stay unused |
+| **speed caps are Mbps** | 500 KB/s = **4 Mbps** (`2 Mbps` = 250 KB/s) | — |
+| **caps need a live lease** | the tc shaper only creates a class for devices that currently have an IP | a device that is offline gets its cap when it reconnects |
+
+---
+
 ## License
 
 - Original project by [UserJoo9](https://github.com/UserJoo9/QuotaManager) — MIT.
