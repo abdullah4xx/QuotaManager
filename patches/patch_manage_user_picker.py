@@ -2,8 +2,17 @@
 """manage-first UI: the Manage button opens a dialog that registers the device
 AND picks the person it belongs to, in one step.
 
+v3 (important): the developer's adopt endpoint adds the new MAC to the
+**allow** list (api/app.py: `add_mac_list("allow", [mac])`), and an allow-listed
+MAC is **never quota-blocked** (see service.resolve_device_state: the allow
+list wins over the user's quota block). So a freshly adopted device would
+silently ignore its person's quota AND the daily device caps. This patch
+removes the MAC from the allow list right after the adopt, so the quota and
+the daily caps really apply.
+
 Changes:
   web/js/components/peopleDialogs.js - add openAdoptDevice(rogue, refresh)
+                                       + drop the MAC from the allow list
   web/js/pages/people.js             - Manage button opens that dialog
   web/js/i18n/ar.js + en.js          - two new keys
 
@@ -19,22 +28,6 @@ MARK = "openAdoptDevice"
 # --- peopleDialogs.js -------------------------------------------------------
 pd = root / "web" / "js" / "components" / "peopleDialogs.js"
 src = pd.read_text(encoding="utf-8")
-if MARK in src and "res.user_id" not in src:
-    # upgrade v1 -> v2: also delete the auto-minted user after assigning
-    old = ('      if (owner.value) await api.patch("/api/devices/" + res.id,\n'
-           '        { user_id: +owner.value });\n')
-    new = ('      if (owner.value) {\n'
-           '        await api.patch("/api/devices/" + res.id, { user_id: +owner.value });\n'
-           '        if (res.user_id) await api.del("/api/users/" + res.user_id);\n'
-           '      }\n')
-    if old in src:
-        src = src.replace(old, new, 1)
-        pd.write_text(src, encoding="utf-8")
-        print("peopleDialogs.js: upgraded - mints no leftover user")
-    else:
-        print("peopleDialogs.js: [WARN] v1 onSubmit not found - check manually")
-elif MARK in src:
-    print("peopleDialogs.js: already patched")
 if MARK not in src:
     if 'from "../core/api.js"' not in src:
         src = src.replace(
@@ -57,8 +50,11 @@ if MARK not in src:
         "    onSubmit: async () => {\n"
         "      const res = await api.post(\"/api/rogue/adopt\",\n"
         "        { mac: rogue.mac, ip: rogue.ip || \"\", name: name.value.trim() });\n"
-        "      if (owner.value) await api.patch(\"/api/devices/\" + res.id,\n"
-        "        { user_id: +owner.value });\n"
+        "      if (owner.value) {\n"
+        "        await api.patch(\"/api/devices/\" + res.id, { user_id: +owner.value });\n"
+        "        if (res.user_id) await api.del(\"/api/users/\" + res.user_id);\n"
+        "      }\n"
+        "      await dropFromAllowList(rogue.mac);\n"
         "      toast(t(\"pp.rogue.adopted\")); await refresh(); return true;\n"
         "    } });\n"
         "  api.get(\"/api/users\").then((us) =>\n"
@@ -66,12 +62,55 @@ if MARK not in src:
         "      .forEach((u) => owner.append(h(\"option\", { value: String(u.id) }, u.name))))\n"
         "    .catch(() => {});\n"
         "}\n"
+        "\n"
+        "// manage-first PATCH: the developer's adopt adds the MAC to the allow\n"
+        "// list, and an allow-listed MAC is never quota-blocked — drop it so the\n"
+        "// person's quota and the daily device caps really apply.\n"
+        "async function dropFromAllowList(mac) {\n"
+        "  try {\n"
+        "    const lists = await api.get(\"/api/mac-lists\");\n"
+        "    if (lists && Array.isArray(lists.allow) && lists.allow.includes(mac)) {\n"
+        "      await api.post(\"/api/mac-lists\",\n"
+        "        { allow: lists.allow.filter((m) => m !== mac) });\n"
+        "    }\n"
+        "  } catch { /* not fatal: the quota still applies, just not the cut */ }\n"
+        "}\n"
     )
     src = src.rstrip() + "\n" + helper
     pd.write_text(src, encoding="utf-8")
-    print("peopleDialogs.js: added openAdoptDevice")
+    print("peopleDialogs.js: added openAdoptDevice (+ allow-list cleanup)")
+elif "dropFromAllowList" not in src:
+    # upgrade v1/v2 -> v3: add the allow-list cleanup
+    old = """      if (owner.value) {
+        await api.patch("/api/devices/" + res.id, { user_id: +owner.value });
+        if (res.user_id) await api.del("/api/users/" + res.user_id);
+      }
+"""
+    new = old + "      await dropFromAllowList(rogue.mac);\n"
+    helper_fn = (
+        "\n"
+        "// manage-first PATCH: the developer's adopt adds the MAC to the allow\n"
+        "// list, and an allow-listed MAC is never quota-blocked — drop it so the\n"
+        "// person's quota and the daily device caps really apply.\n"
+        "async function dropFromAllowList(mac) {\n"
+        "  try {\n"
+        "    const lists = await api.get(\"/api/mac-lists\");\n"
+        "    if (lists && Array.isArray(lists.allow) && lists.allow.includes(mac)) {\n"
+        "      await api.post(\"/api/mac-lists\",\n"
+        "        { allow: lists.allow.filter((m) => m !== mac) });\n"
+        "    }\n"
+        "  } catch { /* not fatal: the quota still applies, just not the cut */ }\n"
+        "}\n"
+    )
+    if old in src:
+        src = src.replace(old, new, 1)
+        src = src.rstrip() + "\n" + helper_fn
+        pd.write_text(src, encoding="utf-8")
+        print("peopleDialogs.js: upgraded - the new MAC is dropped from the allow list")
+    else:
+        print("peopleDialogs.js: [WARN] v2 onSubmit not found - check manually")
 else:
-    print("peopleDialogs.js: already patched")
+    print("peopleDialogs.js: already patched (v3)")
 
 # --- people.js --------------------------------------------------------------
 pp = root / "web" / "js" / "pages" / "people.js"
