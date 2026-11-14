@@ -277,6 +277,21 @@ chmod +x /opt/QuotaManager/bin/sing-box
 
 ---
 
+## ⚠️ فخّاي لازم تعرفها (اقراها قبل ما تضبط الحصص)
+
+| الفخ | إيه بيحصل | الحل |
+|---|---|---|
+| **قائمة `allow`** | مسار الـ Manage/adopt بتاع المطور بيحط كل MAC جديد في `allow`، والجهاز في الـ allow-list **مش بيتقطع أبداً** → يتخطّى نصيبه وخطة اليوم بصمت | `patches/patch_manage_user_picker.py` (v3) بيشيل الـ MAC بعد الـ adopt. لازم تعيد تطبيق الباتشات بعد كل تحديث |
+| **نصيب 0 ≠ مقطوع** | للشخص العادي، نصيب 0 = "من غير حد" (حماية المطور `no allowance => unmetered`) — القصّ بيحصل لما الاستهلاك يتجاوزه | `quota_mode: "disabled"` = دايماً مقطوع |
+| **الـ top-ups والـ packs بيتجمعوا** | `allowance = fixed_gb + topup_gb + الباقات الموجّهة` — 19 pack فوق `fixed 19` = **38** | سيب واحد فيهم بس |
+| **`reset-month`** | بيمسح استهلاك الفترة **و** الـ top-ups | راجع الأرقام بعده |
+| **جلسة أدمن واحدة** | كل `/api/login` بيغيّر الـ session_token ويخرج الجلسة التانية | استخدم cookie واحدة، وأعد اللوجين عند `not logged in` |
+| **الـ shaping مفتاحين** | `config.yaml: shaping.enabled: true` **+** سرعة الخط في الـ DB (`POST /api/network`) | الاتنين، وإلا حدود السرعة مش هتشتغل |
+| **وحدة الحد = Mbps** | 500 KB/s = **4 Mbps** (2 Mbps = 250 KB/s) | — |
+| **السقف محتاج lease حي** | الـ shaper بيعمل class للأجهزة اللي عندها IP بس | الجهاز اللي مش متصل بياخد سقفه أول ما يتصل |
+
+---
+
 ## الرخصه
 
 - الكود الأصلي للمطور [UserJoo9/QuotaManager](https://github.com/UserJoo9/QuotaManager) — MIT.
