@@ -16,8 +16,8 @@
 
 bundle:
   total_gb: 200.0
-  reset_day: 0
-  period_type: end_of_month
+  reset_day: 28
+  period_type: renew_day
 
 db_path: /opt/quota-data/quota.db
 log_file: /var/log/quota-gateway/quota.log
@@ -82,7 +82,7 @@ firewall:
 # juggling (4 tc spawns per tick). Turn it on from the dashboard if you set
 # a line rate.
 shaping:
-  enabled: false
+  enabled: true
 
 # --- performance tuning for a weak CPU (MT7621) ---
 # The latency probe ARPs every client 6x per sweep to tell WiFi from wired;
